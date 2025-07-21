@@ -199,6 +199,55 @@ class ModulationMixer(tf.keras.layers.Layer):
         return smooth
 
 ####################################################################################################
+# TornadoNet
+####################################################################################################
+
+@register_keras_serializable()
+class CAPEAmplifier(tf.keras.layers.Layer):
+    def __init__(self, threshold=2000, scale=0.001, **kwargs):
+        super().__init__(**kwargs)
+        self.threshold = threshold
+        self.scale = scale
+
+    def call(self, inputs):
+        cape = inputs[:, 1]
+        boost = tf.sigmoid((cape - self.threshold) * self.scale)
+        mod = 1.0 + 0.3 * boost
+        return tf.expand_dims(mod, axis=-1)
+
+@register_keras_serializable()
+class LCLSuppressor(tf.keras.layers.Layer):
+    def __init__(self, threshold=1400, scale=0.002, **kwargs):
+        super().__init__(**kwargs)
+        self.threshold = threshold
+        self.scale = scale
+
+    def call(self, inputs):
+        lcl = inputs[:, 2]
+        suppression = tf.sigmoid((lcl - self.threshold) * self.scale)
+        return tf.expand_dims(1.0 - 0.25 * suppression, axis=-1)
+
+@register_keras_serializable()
+class STPActivator(tf.keras.layers.Layer):
+    def __init__(self, threshold=1.5, scale=1.0, **kwargs):
+        super().__init__(**kwargs)
+        self.threshold = threshold
+        self.scale = scale
+
+    def call(self, inputs):
+        stp = inputs[:, 4]
+        activation = tf.sigmoid((stp - self.threshold) * self.scale)
+        return tf.expand_dims(1.0 + 0.2 * activation, axis=-1)
+
+@register_keras_serializable()
+class TornadoModulationMixer(tf.keras.layers.Layer):
+    def call(self, inputs):
+        cape_mod, lcl_mod, stp_mod = inputs
+        combined = cape_mod * lcl_mod * stp_mod
+        return 1.0 + 0.3 * tf.tanh(combined - 1.0)
+
+
+####################################################################################################
 # Activation for TrustNets
 ####################################################################################################
 

@@ -171,6 +171,31 @@ def predict_hurricane(sst, ohc, mlh, vws, pv, sstu, use_trust):
         return f"⚠️ Hurricane Possible ({adjusted:.2f})"
     else:
         return f"🛡️ Hurricane Unlikely ({adjusted:.2f})"
+    
+def predict_tornado(srh, cape, lcl, shear, stp, use_trustnet):
+    features = [srh, cape, lcl, shear, stp]
+    raw = np.array(features, dtype="float32").reshape(1, -1)
+
+    base_pred = TornadoNet(raw).numpy()[0][0]
+    verdict = None
+
+    if use_trustnet:
+        scaled = TornadoTrustScaler.transform(pd.DataFrame([features], columns=[
+            "storm_relative_helicity", "CAPE",
+            "lifted_condensation_level", "bulk_wind_shear",
+            "significant_tornado_param"
+        ]))
+        trust_score = TornadoTrustNet(scaled).numpy()[0][0]
+        adjusted = np.clip(base_pred * trust_score, 0, 1)
+    else:
+        adjusted = base_pred
+
+    if adjusted > 0.55:
+        return f"🌪️ TORNADO LIKELY ({adjusted:.2f})"
+    elif 0.40 < adjusted <= 0.55:
+        return f"⚠️ Tornado Possible ({adjusted:.2f})"
+    else:
+        return f"🛡️ Tornado Unlikely ({adjusted:.2f})"
 
 def generate_plot(axis, use_trustnet):
     sweep_values = np.linspace({
@@ -421,6 +446,46 @@ def generate_hurricane_plot(axis, use_trustnet):
     ax.set_xlabel(axis.replace("_", " ").title())
     ax.set_ylabel("Formation Likelihood")
     ax.set_title(f"Hurricane Formation vs. {axis.replace('_', ' ').title()}")
+    ax.legend()
+    ax.grid(True)
+    return fig
+
+def generate_tornado_plot(axis, use_trustnet):
+    axis_ranges = {
+        "storm_relative_helicity": (100, 500),
+        "CAPE": (0, 4000),
+        "lifted_condensation_level": (300, 2000),
+        "bulk_wind_shear": (0, 30),
+        "significant_tornado_param": (0.0, 5.0)
+    }
+
+    sweep_values = np.linspace(*axis_ranges[axis], 100)
+
+    base_input = {
+        "storm_relative_helicity": 280,
+        "CAPE": 3000,
+        "lifted_condensation_level": 950,
+        "bulk_wind_shear": 12,
+        "significant_tornado_param": 1.8
+    }
+
+    df = pd.DataFrame([{**base_input, axis: val} for val in sweep_values])
+    raw_preds = TornadoNet.predict(df).flatten()
+
+    if use_trustnet:
+        scaled_df = TornadoTrustScaler.transform(df)
+        trust_scores = TornadoTrustNet.predict(scaled_df).flatten()
+        modulated = np.clip(raw_preds * trust_scores, 0, 1)
+    else:
+        modulated = raw_preds
+
+    fig, ax = plt.subplots()
+    ax.plot(sweep_values, raw_preds, "--", color="gray", label="TornadoNet")
+    if use_trustnet:
+        ax.plot(sweep_values, modulated, color="darkred", label="Trust-Modulated")
+    ax.set_xlabel(axis.replace("_", " ").title())
+    ax.set_ylabel("Tornado Likelihood")
+    ax.set_title(f"Tornado Formation vs. {axis.replace('_', ' ').title()}")
     ax.legend()
     ax.grid(True)
 
@@ -801,6 +866,67 @@ with gr.Blocks(theme=gr.themes.Default(), css=".tab-nav-button { font-size: 1.1r
                 hurricane_sweep_axis
             ],
             outputs=[hurricane_output, hurricane_plot]
+        )
+
+    with gr.Tab("🌪️ Tornadoes"):
+        with gr.Row():
+            with gr.Column():
+                with gr.Row():
+                    srh_input = gr.Slider(100, 500, value=280, label="Storm Relative Helicity (SRH, 0–3 km) [m²/s²]")
+                    gr.Dropdown(["m²/s²"], value="m²/s²", label="", scale=0.2)
+
+                with gr.Row():
+                    cape_input = gr.Slider(0, 4000, value=3000, label="Convective Available Potential Energy (CAPE) [J/kg]")
+                    gr.Dropdown(["J/kg"], value="J/kg", label="", scale=0.2)
+
+                with gr.Row():
+                    lcl_input = gr.Slider(300, 2000, value=950, label="Lifted Condensation Level (LCL) [m]")
+                    gr.Dropdown(["m"], value="m", label="", scale=0.2)
+
+                with gr.Row():
+                    shear_input = gr.Slider(0, 30, value=12, label="0–6 km Bulk Wind Shear [m/s]")
+                    gr.Dropdown(["m/s"], value="m/s", label="", scale=0.2)
+
+                with gr.Row():
+                    stp_input = gr.Slider(0.0, 5.0, value=1.8, label="Significant Tornado Parameter (STP)")
+                    gr.Dropdown(["unitless"], value="unitless", label="", scale=0.2)
+
+                use_trust_tornado = gr.Checkbox(label="Use TornadoTrustNet", value=True)
+
+                tornado_sweep_axis = gr.Radio(
+                    ["storm_relative_helicity", "CAPE", "lifted_condensation_level", "bulk_wind_shear", "significant_tornado_param"],
+                    label="Sweep Axis", value="CAPE"
+                )
+
+                tornado_predict_btn = gr.Button("Predict")
+
+            with gr.Column():
+                with gr.Accordion("ℹ️ Feature Definitions", open=False):
+                    gr.Markdown("""
+    **SRH (m²/s²):** Measures potential for rotating updrafts.
+
+    **CAPE (J/kg):** Buoyant energy available for strong vertical motion.
+
+    **LCL (m):** Lower values favor low-level vortex development.
+
+    **Bulk Wind Shear (m/s):** Higher values improve storm structure.
+
+    **STP (unitless):** Composite index for tornado likelihood.
+                    """)
+
+                tornado_output = gr.Textbox(label="Tornado Formation Verdict")
+                tornado_plot = gr.Plot(label="Trust-Modulated Tornado Risk")
+
+        tornado_predict_btn.click(
+            fn=lambda srh, cape, lcl, shear, stp, trust, axis: (
+                predict_tornado(srh, cape, lcl, shear, stp, trust),
+                generate_tornado_plot(axis, trust)
+            ),
+            inputs=[
+                srh_input, cape_input, lcl_input, shear_input, stp_input,
+                use_trust_tornado, tornado_sweep_axis
+            ],
+            outputs=[tornado_output, tornado_plot]
         )
 
 

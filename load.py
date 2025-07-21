@@ -79,3 +79,15 @@ HurricaneTrustNet = tf.keras.models.load_model("models/HurricaneTrustNet.h5", cu
     "trust_activation": trust_activation
 })
 HurricaneTrustScaler = joblib.load("models/HurricaneTrustScaler.pkl")
+
+TornadoNet = tf.keras.models.load_model("models/TornadoNet.h5", custom_objects={
+    'CAPEAmplifier': CAPEAmplifier,
+    'LCLSuppressor': LCLSuppressor,
+    'STPActivator': STPActivator,
+    'ModulationMixer': TornadoModulationMixer
+})
+TornadoTrustNet = tf.keras.models.load_model("models/TornadoTrustNet.h5", custom_objects={
+    'mse': tf.keras.losses.MeanSquaredError(),
+    'trust_activation': trust_activation
+})
+TornadoTrustScaler = joblib.load("models/TornadoTrustScaler.pkl")
