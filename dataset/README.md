@@ -15,4 +15,4 @@ Some of these were synthetically generated with NumPy and others from real sourc
 | ``flash_flood_data.csv`` | NumPy | FlashFloodNet, FlashFloodTrustNet |
 | ``earthquake_data.csv`` | NumPy | QuakeNet, QuakeTrustNet |
 | ``hurricane_data.csv`` | NumPy | HurricaneNet, HurricaneTrustNet |
-| ``tornado_data.csv | NumPy | TornadoNet, TornadoTrustNet |
+| ``tornado_data.csv`` | NumPy | TornadoNet, TornadoTrustNet |
